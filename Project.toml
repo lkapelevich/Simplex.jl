@@ -1,0 +1,8 @@
+name = "Simplex"
+uuid = "1b950094-d548-4fb7-8e29-cb0908c95717"
+authors = ["LEAXPS-15\\lkape <lkapelevich@yahoo.com.au>"]
+version = "0.1.0"
+
+[deps]
+GLPK = "60bf3e95-4087-53dc-ae20-288a0d20c6a6"
+TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
