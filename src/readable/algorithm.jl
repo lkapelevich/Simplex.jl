@@ -39,43 +39,8 @@ assumes A doesn't have redundant constraints while problem is feasible (won't be
 
 =#
 using LinearAlgebra # for dot
-using Printf
 
-tol = 100eps()
-
-function print_progress(A, b, c, pi, x_b, basic_idxs, var_status, phase_I_data, B_inv, B_inv_A_i)
-    @show phase_I_data
-    @show x_b
-    @show basic_idxs
-    @show var_status
-    @show pi
-    @show B_inv
-    @show B_inv_A_i
-end
-
-struct SimplexDataNaive
-    # problem data
-    A::Matrix{Float64}
-    b::Vector{Float64}
-    c::Vector{Float64}
-    # solution
-    x::Vector{Float64}
-    # inverse of basic columns of A
-    B_inv::Matrix{Float64}
-    # B_inv multiplied by column in A of entering variable
-    B_inv_A_i::Vector{Float64}
-    # duals
-    pi::Vector{Float64}
-    # basic part of c and x
-    c_b::Vector{Float64}
-    x_b::Vector{Float64}
-    # position in the basis of each variable, or 0 if non-basic
-    var_status::Vector{Int} # TODO maybe remove this, can cache vector of RC instead
-    # list of variable indices that are basic
-    basic_idxs::Vector{Int}
-end
-
-function find_entering_var(A, c, pi, var_status, phase_I_data)
+function find_entering_var(A::Matrix{Float64}, c::Vector{Float64}, pi::Vector{Float64}, var_status::Vector{Int}, phase_I_data::Bool)
     min_rc = 0
     min_idx = 0
     for k in eachindex(var_status)
@@ -92,7 +57,7 @@ function find_entering_var(A, c, pi, var_status, phase_I_data)
     return (min_rc, min_idx)
 end
 
-function find_leaving_var(n, x_b, B_inv_A_i, basic_idxs, phase_I_data)
+function find_leaving_var(n::Int, x_b::Vector{Float64}, B_inv_A_i::Vector{Float64}, basic_idxs::Vector{Int}, phase_I_data::Bool)
     min_ratio = Inf
     min_idx = 0
     for k in eachindex(B_inv_A_i)
@@ -111,42 +76,38 @@ function find_leaving_var(n, x_b, B_inv_A_i, basic_idxs, phase_I_data)
     return (min_ratio, min_idx)
 end
 
-function full_update(var_status, basic_idxs, c_b, B_inv, B_inv_A_i, x_b, c, entering_ind, leaving_ind, phase_I_data)
+function basic_data_update(var_status::Vector{Int}, basic_idxs::Vector{Int}, c_b::Vector{Float64}, c::Vector{Float64}, entering_ind::Int, leaving_ind::Int, phase_I_data::Bool)
+    basic_idxs[leaving_ind] = entering_ind
+    var_status[var_status .== leaving_ind] .= 0
+    var_status[entering_ind] = leaving_ind
+    c_b[leaving_ind] = (phase_I_data ? 0 : c[entering_ind])
+    return
+end
+
+function tableau_update(B_inv::Matrix{Float64}, B_inv_A_i::Vector{Float64}, x_b::Vector{Float64}, leaving_ind::Int)
     B_inv[leaving_ind, :] ./= B_inv_A_i[leaving_ind]
     x_b[leaving_ind] /= B_inv_A_i[leaving_ind]
-    for k in eachindex(basic_idxs)
+    for k in eachindex(B_inv_A_i)
         if k != leaving_ind
             B_inv[k , :] .-= B_inv[leaving_ind, :] * B_inv_A_i[k]
             x_b[k] -= x_b[leaving_ind] * B_inv_A_i[k]
         end
     end
-    basic_idxs[leaving_ind] = entering_ind
-    var_status[var_status .== leaving_ind] .= 0
-    var_status[entering_ind] = leaving_ind
-
-    c_b[leaving_ind] = (phase_I_data ? 0 : c[entering_ind])
-
     return
 end
 
-function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64}; skip_phase_I = false, basic_idxs = [], var_status = [], B_inv = [],
-    x_b = [], c_b = [])
-    tol = 100eps()
+function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64})
     (m, n) = size(A)
     entering_ind = 0
     @assert all(bi -> bi >= 0, b)
 
     # set basic variables to artificial variables
-    if !skip_phase_I
-        basic_idxs = collect((n + 1):(m + n))
-        var_status = zeros(Int, n)
-        B_inv = Matrix{Float64}(I, m, m)
-        x_b = copy(b)
-        c_b = ones(m)
-        phase_I_data = true
-    else
-        phase_I_data = false
-    end
+    basic_idxs = collect((n + 1):(m + n))
+    var_status = zeros(Int, n)
+    B_inv = Matrix{Float64}(I, m, m)
+    x_b = copy(b)
+    c_b = ones(m)
+    phase_I_data = true
     x = zeros(n)
     pi = similar(b)
     obj = NaN
@@ -156,8 +117,6 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64}; ski
 
     while !finished_rsm
         while true
-            # print_progress(A, b, c, pi, x_b, basic_idxs, var_status, phase_I_data, B_inv, B_inv_A_i)
-
             # update duals
             pi = B_inv' * c_b
 
@@ -178,8 +137,8 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64}; ski
             end
 
             # update data
-            full_update(var_status, basic_idxs, c_b, B_inv, B_inv_A_i, x_b, c, entering_ind, leaving_ind, phase_I_data)
-
+            tableau_update(B_inv, B_inv_A_i, x_b, leaving_ind)
+            basic_data_update(var_status, basic_idxs, c_b, c, entering_ind, leaving_ind, phase_I_data)
         end
 
         # compute objective
@@ -204,6 +163,7 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64}; ski
             finished_rsm = true
             # TODO handle if any artificial variables remain
             if unbounded
+                # return an extreme ray
                 x[basic_idxs] .= -B_inv_A_i
                 x[entering_ind] = 1
                 obj = -Inf
@@ -215,10 +175,3 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64}; ski
     end
     return (x, pi, obj)
 end
-
-
-
-
-
-
-;
