@@ -1,5 +1,10 @@
 module Simplex
+using TimerOutputs
 
-greet() = print("Hello World!")
+export fullrsm,
+    fullrsm_2
+
+include("algorithm.jl")
+include("no_phase1.jl")
 
 end # module

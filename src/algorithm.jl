@@ -1,5 +1,5 @@
 #=
-Readable, but inefficient implementation of the simplex algorithm
+Readable, inefficient, rather dumb implementation of the simplex algorithm
 
 min c'x
 st  Ax = b
@@ -8,8 +8,6 @@ st  Ax = b
 At each iteration B denotes the basic columns of a, N the nonbasic columns,
 i.e. A = [B | N]
 
-Phase II:
-(0) we have a set of basic variables and the partition A = [B | N], as well as B_inv
 (1) calculate the duals pi' = c_b' * B_inv
 (2) calculate reduced costs c_n' - pi' * N
 (3)
@@ -18,15 +16,13 @@ Phase II:
 (4) compute B_inv * A_i
 (5) find the leaving variable
     j = argmin_k{e_k' * B_inv * b / e_k' * B_inv * A_i : e_k' * B_inv * A_i > 0}
-    (a) if e_k' * B_inv * A_i <= 0 for all k, return extreme ray B_inv * A_i
+    (a) if e_k' * B_inv * A_i <= 0 for all k, return extreme ray using B_inv * A_i
     (b) otherwise, variable x_j leaves the basis
 (6) update the basis
-remember B is never needed in the algorithm, only B_inv
-let Q be the elementary matrix such that Q * B_inv * A_i = e_j
-then update B_inv * b and B_inv by applying Q
+    remember B is never needed in the algorithm, only B_inv
+    let Q be the elementary matrix such that Q * B_inv * A_i = e_j
+    then update B_inv * b and B_inv by applying Q
 
-if infeasible, we will return a flag: result = 0 and obj = Inf
-if unbounded, obj = -Inf, won't return extreme ray although easy
 
 * views
 * don't even need a copy of x_b, make it a view, maybe dumb version can have an array we copy into
@@ -39,15 +35,17 @@ assumes A doesn't have redundant constraints while problem is feasible (won't be
 
 =#
 using LinearAlgebra # for dot
+using TimerOutputs
+const TO = TimerOutput()
 
-function find_entering_var(A::Matrix{Float64}, c::Vector{Float64}, pi::Vector{Float64}, var_status::Vector{Int}, phase_I_data::Bool)
+function find_entering_var(A::Matrix{T}, c::Vector{T}, pi::Vector{T}, var_status::Vector{Int}, phase_I_data::Bool) where {T <: Real}
     min_rc = 0
     min_idx = 0
     for k in eachindex(var_status)
         # only check nonbasic variables
         if iszero(var_status[k])
             ck = (phase_I_data ? 0 : c[k])
-            rc = ck - dot(A[:, k], pi)
+            @timeit TO "rc" @views rc = ck - sum(A[i, k] * pi[i] for i in eachindex(pi)) # dot(A[:, k], pi)
             if rc < min_rc
                 min_rc = rc
                 min_idx = k
@@ -57,14 +55,14 @@ function find_entering_var(A::Matrix{Float64}, c::Vector{Float64}, pi::Vector{Fl
     return (min_rc, min_idx)
 end
 
-function find_leaving_var(n::Int, x_b::Vector{Float64}, B_inv_A_i::Vector{Float64}, basic_idxs::Vector{Int}, phase_I_data::Bool)
-    min_ratio = Inf
+function find_leaving_var(n::Int, x_b::Vector{T}, B_inv_A_i::Vector{T}, basic_idxs::Vector{Int}, phase_I_data::Bool) where {T <: Real}
+    min_ratio = T(Inf)
     min_idx = 0
     for k in eachindex(B_inv_A_i)
         if B_inv_A_i[k] > 0
             # drive the first artificial variable out of the basis if any remain
             if !phase_I_data && basic_idxs[k] > n
-                return (0.0, k)
+                return (zero(T), k)
             end
             ratio = x_b[k] / B_inv_A_i[k]
             if ratio < min_ratio
@@ -102,6 +100,7 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64})
     @assert all(bi -> bi >= 0, b)
 
     # set basic variables to artificial variables
+    @timeit TO "setup" begin
     basic_idxs = collect((n + 1):(m + n))
     var_status = zeros(Int, n)
     B_inv = Matrix{Float64}(I, m, m)
@@ -109,26 +108,27 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64})
     c_b = ones(m)
     phase_I_data = true
     x = zeros(n)
-    pi = similar(b)
+    pi = zeros(m)
     obj = NaN
     unbounded = false
     finished_rsm = false
     B_inv_A_i = zeros(m)
+    end
 
-    while !finished_rsm
+    @timeit TO "rsm" while !finished_rsm
         while true
             # update duals
-            pi = B_inv' * c_b
+            @timeit TO "pi" pi = B_inv' * c_b
 
             # find an entering variable
-            (min_rc, entering_ind) = find_entering_var(A, c, pi, var_status, phase_I_data)
+            @timeit TO "entering" (min_rc, entering_ind) = find_entering_var(A, c, pi, var_status, phase_I_data)
             # if all reduced costs are nonnegative, we found an optimal solution to the current phase
             if iszero(entering_ind)
                 break
             end
 
             # find a leaving variable
-            B_inv_A_i = B_inv * A[:, entering_ind]
+            @timeit TO "BiAi" B_inv_A_i = B_inv * A[:, entering_ind]
             (min_ratio, leaving_ind) = find_leaving_var(n, x_b, B_inv_A_i, basic_idxs, phase_I_data)
             if iszero(leaving_ind)
                 @assert !phase_I_data
@@ -137,7 +137,7 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64})
             end
 
             # update data
-            tableau_update(B_inv, B_inv_A_i, x_b, leaving_ind)
+            @timeit TO "tableau" tableau_update(B_inv, B_inv_A_i, x_b, leaving_ind)
             basic_data_update(var_status, basic_idxs, c_b, c, entering_ind, leaving_ind, phase_I_data)
         end
 
@@ -161,7 +161,6 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64})
         # stop if we have arrived at the end of pahse II
         else
             finished_rsm = true
-            # TODO handle if any artificial variables remain
             if unbounded
                 # return an extreme ray
                 x[basic_idxs] .= -B_inv_A_i

@@ -2,12 +2,14 @@ using Test
 using JuMP
 using GLPK
 using LinearAlgebra
-include(joinpath(dirname(@__DIR__()), "src", "readable", "algorithm.jl"))
+using Simplex
+# include(joinpath(dirname(@__DIR__()), "src", "readable", "algorithm.jl"))
 
 function test_unboundedness(A, b, c, primal_sol, dual_sol, obj)
     tol = 1e-10
     @test obj == -Inf
-    @test dot(c, primal_sol) < 0
+    @test dot(c, primal_sol) < -tol
+    @test norm(primal_sol) > tol
     @test A * primal_sol ≈ zeros(size(A, 1)) atol=tol rtol=tol
     @test all(primal_sol .>= -tol)
 
@@ -54,6 +56,20 @@ end
     b = Float64[4, 0, 6]
     c = Float64[1, 2, 3, 0, 0, 0]
     (primal_sol, dual_sol, obj) = fullrsm(A, b, c)
+    test_optimality(A, b, c, primal_sol, dual_sol, obj)
+end
+
+@testset "problem 2 no phase I" begin
+    basic_idxs = [2, 4, 6]
+    A = Float64[3 2 1 2 1 0 0; 1 1 1 1 0 1 0; 4 3 3 4 0 0 1]
+    B = A[:, basic_idxs]
+    B_inv = inv(B)
+    b = Float64[225, 117, 420]
+    c = -Float64[19, 13, 12, 17, 0, 0, 0]
+    c_b = c[basic_idxs]
+    x_b = B_inv * b
+    var_status = [0, 1, 0, 2, 0, 3]
+    (primal_sol, dual_sol, obj) = fullrsm_2(basic_idxs, var_status, A, B_inv, x_b, c)
     test_optimality(A, b, c, primal_sol, dual_sol, obj)
 end
 
