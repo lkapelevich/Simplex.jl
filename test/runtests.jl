@@ -3,7 +3,6 @@ using JuMP
 using GLPK
 using LinearAlgebra
 using Simplex
-# include(joinpath(dirname(@__DIR__()), "src", "readable", "algorithm.jl"))
 
 function test_unboundedness(A, b, c, primal_sol, dual_sol, obj)
     tol = 1e-10
@@ -13,7 +12,7 @@ function test_unboundedness(A, b, c, primal_sol, dual_sol, obj)
     @test A * primal_sol ≈ zeros(size(A, 1)) atol=tol rtol=tol
     @test all(primal_sol .>= -tol)
 
-    model = Model(with_optimizer(GLPK.Optimizer))
+    model = Model(GLPK.Optimizer)
     @variable(model, x[1:length(c)] >= 0)
     @constraint(model, constr, A * x .== b)
     @objective(model, Min, dot(c, x))

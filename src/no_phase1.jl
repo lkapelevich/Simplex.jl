@@ -55,7 +55,7 @@ function tableau_update_2(B_inv::Matrix{T}, B_inv_A_i::Vector{T}, x_b::Vector{T}
     x_b[leaving_ind] /= B_inv_A_i[leaving_ind]
     for k in eachindex(B_inv_A_i)
         if k != leaving_ind
-            B_inv[k , :] .-= B_inv[leaving_ind, :] * B_inv_A_i[k]
+            B_inv[k, :] .-= B_inv[leaving_ind, :] * B_inv_A_i[k]
             x_b[k] -= x_b[leaving_ind] * B_inv_A_i[k]
         end
     end

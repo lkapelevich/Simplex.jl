@@ -1,39 +1,4 @@
-#=
-Readable, inefficient, rather dumb implementation of the simplex algorithm
-
-min c'x
-st  Ax = b
-    x >= 0
-
-At each iteration B denotes the basic columns of a, N the nonbasic columns,
-i.e. A = [B | N]
-
-(1) calculate the duals pi' = c_b' * B_inv
-(2) calculate reduced costs c_n' - pi' * N
-(3)
-    (a) if all reduced costs are nonnegative, terminate
-    (b) otherwise, find variable i = argmin_k{c_k - pi' * A_k} with the smallest reduced cost
-(4) compute B_inv * A_i
-(5) find the leaving variable
-    j = argmin_k{e_k' * B_inv * b / e_k' * B_inv * A_i : e_k' * B_inv * A_i > 0}
-    (a) if e_k' * B_inv * A_i <= 0 for all k, return extreme ray using B_inv * A_i
-    (b) otherwise, variable x_j leaves the basis
-(6) update the basis
-    remember B is never needed in the algorithm, only B_inv
-    let Q be the elementary matrix such that Q * B_inv * A_i = e_j
-    then update B_inv * b and B_inv by applying Q
-
-
-* views
-* don't even need a copy of x_b, make it a view, maybe dumb version can have an array we copy into
-actually nah too ugly. for both x and c_b we can maintain views. make it the first
-improvement that we will do. will need a preassignment to quiz on steps of
-simplex or something to refresh the memory.
-
-assumes b >= 0 for phase I to work
-assumes A doesn't have redundant constraints while problem is feasible (won't be eliminating constraints after Phase I)
-
-=#
+# naive code for the simplex algorithm
 using LinearAlgebra # for dot
 using TimerOutputs
 const TO = TimerOutput()
@@ -45,7 +10,7 @@ function find_entering_var(A::Matrix{T}, c::Vector{T}, pi::Vector{T}, var_status
         # only check nonbasic variables
         if iszero(var_status[k])
             ck = (phase_I_data ? 0 : c[k])
-            @timeit TO "rc" @views rc = ck - sum(A[i, k] * pi[i] for i in eachindex(pi)) # dot(A[:, k], pi)
+            @timeit TO "rc" @views rc = c[k] - dot(A[:, k], pi)
             if rc < min_rc
                 min_rc = rc
                 min_idx = k
@@ -87,7 +52,7 @@ function tableau_update(B_inv::Matrix{Float64}, B_inv_A_i::Vector{Float64}, x_b:
     x_b[leaving_ind] /= B_inv_A_i[leaving_ind]
     for k in eachindex(B_inv_A_i)
         if k != leaving_ind
-            B_inv[k , :] .-= B_inv[leaving_ind, :] * B_inv_A_i[k]
+            @. B_inv[k, :] -= B_inv[leaving_ind, :] * B_inv_A_i[k]
             x_b[k] -= x_b[leaving_ind] * B_inv_A_i[k]
         end
     end
@@ -118,7 +83,7 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64})
     @timeit TO "rsm" while !finished_rsm
         while true
             # update duals
-            @timeit TO "pi" pi = B_inv' * c_b
+            mul!(pi, B_inv', c_b)
 
             # find an entering variable
             @timeit TO "entering" (min_rc, entering_ind) = find_entering_var(A, c, pi, var_status, phase_I_data)
@@ -128,7 +93,7 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64})
             end
 
             # find a leaving variable
-            @timeit TO "BiAi" B_inv_A_i = B_inv * A[:, entering_ind]
+            @views mul!(B_inv_A_i, B_inv, A[:, entering_ind])
             (min_ratio, leaving_ind) = find_leaving_var(n, x_b, B_inv_A_i, basic_idxs, phase_I_data)
             if iszero(leaving_ind)
                 @assert !phase_I_data
