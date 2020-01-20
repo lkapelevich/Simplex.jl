@@ -29,7 +29,7 @@ function test_optimality(A, b, c, primal_sol, dual_sol, obj)
     @test all(c - A' * dual_sol .>= -tol)
     @test dot(primal_sol, c - A' * dual_sol) ≈ 0 atol=tol rtol=tol
 
-    model = Model(with_optimizer(GLPK.Optimizer))
+    model = Model(GLPK.Optimizer)
     @variable(model, x[1:length(c)] >= 0)
     @constraint(model, constr, A * x .== b)
     @objective(model, Min, dot(c, x))
@@ -41,7 +41,7 @@ end
 function test_infeasibility(A, b, c, primal_sol, dual_sol, obj)
     @test obj == Inf
 
-    model = Model(with_optimizer(GLPK.Optimizer))
+    model = Model(GLPK.Optimizer)
     @variable(model, x[1:length(c)] >= 0)
     @constraint(model, constr, A * x .== b)
     @objective(model, Min, dot(c, x))

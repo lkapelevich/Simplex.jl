@@ -6,11 +6,11 @@ const TO = TimerOutput()
 function find_entering_var(A::Matrix{T}, c::Vector{T}, pi::Vector{T}, var_status::Vector{Int}, phase_I_data::Bool) where {T <: Real}
     min_rc = 0
     min_idx = 0
-    for k in eachindex(var_status)
+    @inbounds for k in eachindex(var_status)
         # only check nonbasic variables
         if iszero(var_status[k])
             ck = (phase_I_data ? 0 : c[k])
-            @timeit TO "rc" @views rc = c[k] - dot(A[:, k], pi)
+            @timeit TO "rc" @views rc = ck - dot(A[:, k], pi)
             if rc < min_rc
                 min_rc = rc
                 min_idx = k
@@ -23,7 +23,7 @@ end
 function find_leaving_var(n::Int, x_b::Vector{T}, B_inv_A_i::Vector{T}, basic_idxs::Vector{Int}, phase_I_data::Bool) where {T <: Real}
     min_ratio = T(Inf)
     min_idx = 0
-    for k in eachindex(B_inv_A_i)
+    @inbounds for k in eachindex(B_inv_A_i)
         if B_inv_A_i[k] > 0
             # drive the first artificial variable out of the basis if any remain
             if !phase_I_data && basic_idxs[k] > n
@@ -48,11 +48,11 @@ function basic_data_update(var_status::Vector{Int}, basic_idxs::Vector{Int}, c_b
 end
 
 function tableau_update(B_inv::Matrix{Float64}, B_inv_A_i::Vector{Float64}, x_b::Vector{Float64}, leaving_ind::Int)
-    B_inv[leaving_ind, :] ./= B_inv_A_i[leaving_ind]
+    @views B_inv[leaving_ind, :] ./= B_inv_A_i[leaving_ind]
     x_b[leaving_ind] /= B_inv_A_i[leaving_ind]
-    for k in eachindex(B_inv_A_i)
+    @inbounds for k in eachindex(B_inv_A_i)
         if k != leaving_ind
-            @. B_inv[k, :] -= B_inv[leaving_ind, :] * B_inv_A_i[k]
+            @. @views B_inv[k, :] -= B_inv[leaving_ind, :] * B_inv_A_i[k]
             x_b[k] -= x_b[leaving_ind] * B_inv_A_i[k]
         end
     end
@@ -118,7 +118,7 @@ function fullrsm(A::Matrix{Float64}, b::Vector{Float64}, c::Vector{Float64})
             # problem is feasible, and ready to move to phase II
             phase_I_data = false
             # update c_b with actual costs of the original problem variables that are in the basis
-            for (k, idx) in enumerate(basic_idxs)
+            @inbounds for (k, idx) in enumerate(basic_idxs)
                 if idx <= n
                     c_b[k] = c[idx]
                 end
