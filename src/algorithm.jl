@@ -1,5 +1,5 @@
 # naive code for the simplex algorithm
-using LinearAlgebra # for dot
+using LinearAlgebra
 using TimerOutputs
 const TO = TimerOutput()
 
