@@ -58,19 +58,19 @@ end
     test_optimality(A, b, c, primal_sol, dual_sol, obj)
 end
 
-@testset "problem 2 no phase I" begin
-    basic_idxs = [2, 4, 6]
-    A = Float64[3 2 1 2 1 0 0; 1 1 1 1 0 1 0; 4 3 3 4 0 0 1]
-    B = A[:, basic_idxs]
-    B_inv = inv(B)
-    b = Float64[225, 117, 420]
-    c = -Float64[19, 13, 12, 17, 0, 0, 0]
-    c_b = c[basic_idxs]
-    x_b = B_inv * b
-    var_status = [0, 1, 0, 2, 0, 3]
-    (primal_sol, dual_sol, obj) = fullrsm_2(basic_idxs, var_status, A, B_inv, x_b, c)
-    test_optimality(A, b, c, primal_sol, dual_sol, obj)
-end
+# @testset "problem 2 no phase I" begin
+#     basic_idxs = [2, 4, 6]
+#     A = Float64[3 2 1 2 1 0 0; 1 1 1 1 0 1 0; 4 3 3 4 0 0 1]
+#     B = A[:, basic_idxs]
+#     B_inv = inv(B)
+#     b = Float64[225, 117, 420]
+#     c = -Float64[19, 13, 12, 17, 0, 0, 0]
+#     c_b = c[basic_idxs]
+#     x_b = B_inv * b
+#     var_status = [0, 1, 0, 2, 0, 3]
+#     (primal_sol, dual_sol, obj) = fullrsm_2(basic_idxs, var_status, A, B_inv, x_b, c)
+#     test_optimality(A, b, c, primal_sol, dual_sol, obj)
+# end
 
 # normal
 @testset "problem 2" begin
